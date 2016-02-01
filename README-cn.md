@@ -1,4 +1,5 @@
-LiteOrm:Android SQLite框架库
+LiteOrm:Android SQLite框架库 [![](https://jitpack.io/v/twiceyuan/android-lite-orm.svg)](https://jitpack.io/#twiceyuan/android-lite-orm)
+
 ================
 换个语种，再来一次
 

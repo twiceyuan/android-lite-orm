@@ -1,4 +1,5 @@
-LiteOrm:Android SQLite Framework
+LiteOrm:Android SQLite Framework [![](https://jitpack.io/v/twiceyuan/android-lite-orm.svg)](https://jitpack.io/#twiceyuan/android-lite-orm)
+
 ================
 
 A fast, small, powerful ORM framework for Android. LiteOrm makes you do CRUD operarions on SQLite database with a sigle line of code efficiently.
