@@ -3,6 +3,7 @@ package com.litesuits.orm.samples;
 import android.os.Bundle;
 import android.os.Environment;
 import com.litesuits.orm.LiteOrm;
+import com.litesuits.orm.db.DataBaseConfig;
 import com.litesuits.orm.db.assit.QueryBuilder;
 import com.litesuits.orm.db.assit.WhereBuilder;
 import com.litesuits.orm.db.model.ColumnsValue;
@@ -42,8 +43,11 @@ public class CascadeTestActivity extends BaseActivity {
 
         if (liteOrm == null) {
             // 使用级联操作
-            liteOrm = LiteOrm.newCascadeInstance(this, DB_NAME);
-            liteOrm.setDebugged(true);
+            DataBaseConfig config = new DataBaseConfig(this, DB_NAME);
+            config.debugged = true; // open the log
+            config.dbVersion = 1; // set database version
+            config.onUpdateListener = null; // set database update listener
+            liteOrm = LiteOrm.newCascadeInstance(config);// cascade
         }
 
         //DataBase db = LiteOrm.newCascadeInstance(this, "cascade.db");
@@ -75,6 +79,7 @@ public class CascadeTestActivity extends BaseActivity {
         switch (id) {
             case 0:
                 testSave();
+                // testMappingForNull();
                 break;
             case 1:
                 testInsert();
@@ -113,6 +118,8 @@ public class CascadeTestActivity extends BaseActivity {
                 testDeleteAll();
                 break;
             case 13:
+                //SqliteUtils.testLargeScaleCascadeLiteOrm(liteOrm, 10000);
+                // 注意 级联操作10万个数据将会相当耗时
                 testLargeScaleUseLite();
                 break;
             case 14:
@@ -123,8 +130,30 @@ public class CascadeTestActivity extends BaseActivity {
         }
     }
 
+    private void testMappingForNull() {
+        School s = new School("A");
+        Classes c1 = new Classes("C1");
+        Classes c2 = new Classes("C2");
+        Classes c3 = new Classes("C3");
+        s.classesList = new ArrayList<Classes>();
+        s.classesList.add(c1);
+        s.classesList.add(c2);
+        s.classesList.add(c3);
+
+        liteOrm.save(s);
+        queryAndPrintAll(School.class);
+        queryAndPrintAll(Classes.class);
+
+        s.classesList = null;
+        liteOrm.save(s);
+        queryAndPrintAll(School.class);
+        queryAndPrintAll(Classes.class);
+
+        liteOrm.deleteAll(School.class);
+        liteOrm.deleteAll(Classes.class);
+    }
+
     private void testSave() {
-        School school = new School("hello");
         liteOrm.save(school);
     }
 
@@ -236,23 +265,26 @@ public class CascadeTestActivity extends BaseActivity {
     private void testDeleteAll() {
         // 连同其关联的classes，classes关联的其他对象一带删除
         liteOrm.deleteAll(School.class);
-        liteOrm.deleteAll(Book.class);
+        //liteOrm.deleteAll(Book.class);
 
 
         // 顺带测试：连库文件一起删掉
-        liteOrm.deleteDatabase();
+        //liteOrm.deleteDatabase();
         // 顺带测试：然后重建一个新库
-        liteOrm.openOrCreateDatabase();
+        //liteOrm.openOrCreateDatabase();
         // 满血复活
     }
 
     /**
-     * 100 000 条数据
+     * 10000 条数据
      */
-    final int MAX = 100000;
+    final int MAX = 10000;
 
+    /**
+     * 注意 级联操作10万个数据将会相当耗时
+     */
     private void testLargeScaleUseLite() {
-        // LiteOrm 代码插入10w条数的效率测试
+        // LiteOrm 级联代码插入10w条数的效率测试
         SqliteUtils.testLargeScaleUseLiteOrm(liteOrm, MAX);
     }
 
@@ -263,7 +295,7 @@ public class CascadeTestActivity extends BaseActivity {
 
     private void queryAndPrintAll(Class claxx) {
         List list = liteOrm.query(claxx);
-        OrmLog.i(TAG, list);
+        OrmLog.i(TAG, claxx.getSimpleName() + " : " + list);
     }
 
 

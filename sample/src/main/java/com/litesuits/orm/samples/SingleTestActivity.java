@@ -2,6 +2,7 @@ package com.litesuits.orm.samples;
 
 import android.os.Bundle;
 import com.litesuits.orm.LiteOrm;
+import com.litesuits.orm.db.DataBaseConfig;
 import com.litesuits.orm.db.assit.QueryBuilder;
 import com.litesuits.orm.db.assit.WhereBuilder;
 import com.litesuits.orm.db.model.ColumnsValue;
@@ -48,9 +49,12 @@ public class SingleTestActivity extends BaseActivity {
         mockData();
 
         if (liteOrm == null) {
-            liteOrm = LiteOrm.newSingleInstance(this, "liteorm.db");
+            DataBaseConfig config = new DataBaseConfig(this, "liteorm.db");
+            config.debugged = true; // open the log
+            config.dbVersion = 1; // set database version
+            config.onUpdateListener = null; // set database update listener
+            liteOrm = LiteOrm.newSingleInstance(config);
         }
-        liteOrm.setDebugged(true); // open the log
     }
 
     @Override
@@ -190,13 +194,14 @@ public class SingleTestActivity extends BaseActivity {
     private void testUpdateColumn() {
 
         //1. 集合更新实例：
-        Boss t1 = bossList.get(0);
-        t1.address = "随意写个乱七八糟的地址，反正我不会更新它";
+        Boss boss0 = bossList.get(0);
+        boss0.address = "随意写个乱七八糟的地址，反正我不会更新它";
         // 仅更新这一个字段
-        t1.phone = "168 8888 8888";
-        Boss t2 = bossList.get(1);
-        t2.address = "呵呵呵呵呵";
-        t2.phone = "168 0000 0000";
+        boss0.phone = "168 8888 8888";
+
+        Boss boss1 = bossList.get(1);
+        boss1.address = "呵呵呵呵呵";
+        boss1.phone = "168 0000 0000";
 
         ColumnsValue cv = new ColumnsValue(new String[]{"phone"});
         long c = liteOrm.update(bossList, cv, ConflictAlgorithm.None);
@@ -354,11 +359,22 @@ public class SingleTestActivity extends BaseActivity {
     }
 
     private void testDeleteByWhereBuilder() {
-        //AND关系 删掉 南京 的 香港路
+        //AND关系 删掉 南京 的 香港路 第一种写法
         liteOrm.delete(WhereBuilder
                 .create(Address.class)
                 .equals(Address.COL_ADDRESS, "香港路")
                 .andEquals(Address.COL_CITY, "南京"));
+
+        //AND关系 删掉 南京 的 香港路 第二种写法
+        liteOrm.delete(WhereBuilder
+                .create(Address.class)
+                .where("address=? AND city=?", new String[]{"香港路", "南京"}));
+
+        //AND关系 删掉 南京 的 香港路 第三种写法
+        liteOrm.delete(WhereBuilder
+                .create(Address.class)
+                .where("address=? AND city=?", "香港路", "南京"));
+
         printAllAddress();
 
         //OR关系 删掉所有地址为 香港路 ，同时删掉 青岛的所有地址

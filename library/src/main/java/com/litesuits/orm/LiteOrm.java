@@ -1,17 +1,45 @@
+/*
+ * Copyright (C) 2013 litesuits.com
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package com.litesuits.orm;
 
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteClosable;
 import android.database.sqlite.SQLiteDatabase;
+
 import com.litesuits.orm.db.DataBase;
 import com.litesuits.orm.db.DataBaseConfig;
 import com.litesuits.orm.db.TableManager;
-import com.litesuits.orm.db.assit.*;
+import com.litesuits.orm.db.assit.Checker;
+import com.litesuits.orm.db.assit.CollSpliter;
+import com.litesuits.orm.db.assit.Querier;
+import com.litesuits.orm.db.assit.QueryBuilder;
+import com.litesuits.orm.db.assit.SQLBuilder;
+import com.litesuits.orm.db.assit.SQLStatement;
+import com.litesuits.orm.db.assit.SQLiteHelper;
+import com.litesuits.orm.db.assit.WhereBuilder;
 import com.litesuits.orm.db.impl.CascadeSQLiteImpl;
 import com.litesuits.orm.db.impl.SingleSQLiteImpl;
-import com.litesuits.orm.db.model.*;
+import com.litesuits.orm.db.model.ColumnsValue;
+import com.litesuits.orm.db.model.ConflictAlgorithm;
+import com.litesuits.orm.db.model.EntityTable;
+import com.litesuits.orm.db.model.MapProperty;
+import com.litesuits.orm.db.model.RelationKey;
 import com.litesuits.orm.db.utils.ClassUtil;
+import com.litesuits.orm.db.utils.DataUtil;
 import com.litesuits.orm.db.utils.FieldUtil;
 import com.litesuits.orm.log.OrmLog;
 
@@ -21,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 数据SQLite操作实现
@@ -57,6 +86,7 @@ public abstract class LiteOrm extends SQLiteClosable implements DataBase {
             config.dbVersion = DataBaseConfig.DEFAULT_DB_VERSION;
         }
         mConfig = config;
+        setDebugged(config.debugged);
         openOrCreateDatabase();
     }
 
@@ -145,6 +175,7 @@ public abstract class LiteOrm extends SQLiteClosable implements DataBase {
      * @param debugged true if debugged
      */
     public void setDebugged(boolean debugged) {
+        mConfig.debugged = debugged;
         OrmLog.isPrint = debugged;
     }
 
@@ -399,7 +430,7 @@ public abstract class LiteOrm extends SQLiteClosable implements DataBase {
     /* --------------------------------  私有方法 -------------------------------- */
     @SuppressWarnings("unchecked")
     private <E, T> boolean keepMapping(Collection<E> col1,
-            Collection<T> col2) throws IllegalAccessException, InstantiationException {
+                                       Collection<T> col2) throws IllegalAccessException, InstantiationException {
         Class claxx1 = col1.iterator().next().getClass();
         Class claxx2 = col2.iterator().next().getClass();
         EntityTable table1 = TableManager.getTable(claxx1);
@@ -434,8 +465,8 @@ public abstract class LiteOrm extends SQLiteClosable implements DataBase {
                             }
                         }
                     }
-                    ArrayList<RelationKey> mapList = queryRelation(claxx1, claxx2, key1List);
-                    if (!Checker.isEmpty(mapList)) {
+                    ArrayList<RelationKey> relationKeys = queryRelation(claxx1, claxx2, key1List);
+                    if (!Checker.isEmpty(relationKeys)) {
                         HashMap<String, Object> map2 = new HashMap<String, Object>();
                         // 构建第2个对象的value映射
                         for (Object o2 : col2) {
@@ -446,27 +477,49 @@ public abstract class LiteOrm extends SQLiteClosable implements DataBase {
                                 }
                             }
                         }
-                        for (RelationKey m : mapList) {
+                        HashMap<Object, ArrayList> collMap = new HashMap<Object, ArrayList>();
+                        for (RelationKey m : relationKeys) {
                             Object obj1 = map1.get(m.key1);
                             Object obj2 = map2.get(m.key2);
                             if (obj1 != null && obj2 != null) {
                                 if (mp.isToMany()) {
                                     // N对多关系
-                                    if (ClassUtil.isCollection(fieldClass)) {
-                                        Collection col = (Collection) FieldUtil.get(mp.field, obj1);
-                                        if (col == null) {
-                                            col = (Collection) fieldClass.newInstance();
-                                            FieldUtil.set(mp.field, obj1, col);
-                                        }
-                                        col.add(obj2);
-                                    } else {
-                                        throw new RuntimeException(
-                                                "OneToMany and ManyToMany Relation, You must use collection object");
+                                    ArrayList col = collMap.get(obj1);
+                                    if (col == null) {
+                                        col = new ArrayList();
+                                        collMap.put(obj1, col);
                                     }
+                                    col.add(obj2);
                                 } else {
                                     FieldUtil.set(mp.field, obj1, obj2);
                                 }
                             }
+                        }
+                        // N对多关系,查出来的数组
+                        if (!Checker.isEmpty(collMap)) {
+                            for (Map.Entry<Object, ArrayList> entry : collMap.entrySet()) {
+                                Object obj1 = entry.getKey();
+                                Collection tempColl = entry.getValue();
+                                if (ClassUtil.isCollection(itemClass)) {
+                                    Collection col = (Collection) FieldUtil.get(mp.field, obj1);
+                                    if (col == null) {
+                                        FieldUtil.set(mp.field, obj1, tempColl);
+                                    } else {
+                                        col.addAll(tempColl);
+                                    }
+                                } else if (ClassUtil.isArray(itemClass)) {
+                                    Object[] tempArray = (Object[]) ClassUtil.newArray(itemClass, tempColl.size());
+                                    tempColl.toArray(tempArray);
+                                    Object[] array = (Object[]) FieldUtil.get(mp.field, obj1);
+                                    if (array == null) {
+                                        FieldUtil.set(mp.field, obj1, tempArray);
+                                    } else {
+                                        Object[] newArray = DataUtil.concat(array, tempArray);
+                                        FieldUtil.set(mp.field, obj1, newArray);
+                                    }
+                                }
+                            }
+
                         }
                         return true;
                     }

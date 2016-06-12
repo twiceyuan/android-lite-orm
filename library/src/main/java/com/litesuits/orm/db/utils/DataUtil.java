@@ -1,14 +1,25 @@
 package com.litesuits.orm.db.utils;
 
+import android.annotation.TargetApi;
 import android.database.Cursor;
-import com.litesuits.orm.log.OrmLog;
+import android.os.Build;
+
 import com.litesuits.orm.db.assit.Checker;
 import com.litesuits.orm.db.model.EntityTable;
 import com.litesuits.orm.db.model.Property;
+import com.litesuits.orm.log.OrmLog;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.lang.reflect.Field;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
+import java.util.List;
 
 /**
  * SQLite支持的数据类型
@@ -85,6 +96,23 @@ public class DataUtil implements Serializable {
      */
     public static final int FIELD_TYPE_SERIALIZABLE = 6;
 
+
+    public static final int CLASS_TYPE_NONE = 0;
+    public static final int CLASS_TYPE_STRING = 1;
+    public static final int CLASS_TYPE_BOOLEAN = 2;
+    public static final int CLASS_TYPE_DOUBLE = 3;
+    public static final int CLASS_TYPE_FLOAT = 4;
+    public static final int CLASS_TYPE_LONG = 5;
+    public static final int CLASS_TYPE_INT = 6;
+    public static final int CLASS_TYPE_SHORT = 7;
+    public static final int CLASS_TYPE_BYTE = 8;
+    public static final int CLASS_TYPE_BYTE_ARRAY = 9;
+    public static final int CLASS_TYPE_CHAR = 10;
+    public static final int CLASS_TYPE_DATE = 11;
+    public static final int CLASS_TYPE_SERIALIZABLE = 12;
+    public static final int CLASS_TYPE_UNKNOWN = 13;
+
+
     /**
      * Returns data type of the given object.
      * <p>
@@ -120,34 +148,25 @@ public class DataUtil implements Serializable {
         }
     }
 
-    public static String getSQLDataType(Field f) {
-        Class<?> type = f.getType();
-        if (type == String.class) {
-            return TEXT;
-        } else if (type == boolean.class || type == Boolean.class) {
-            return TEXT;
-        } else if (type == double.class || type == Double.class) {
-            return REAL;
-        } else if (type == float.class || type == Float.class) {
-            return REAL;
-        } else if (type == long.class || type == Long.class) {
-            return INTEGER;
-        } else if (type == int.class || type == Integer.class) {
-            return INTEGER;
-        } else if (type == short.class || type == Short.class) {
-            return INTEGER;
-        } else if (type == byte.class || type == Byte.class) {
-            return INTEGER;
-        } else if (type == byte[].class || type == Byte[].class) {
-            return BLOB;
-        } else if (type == char.class || type == Character.class) {
-            return TEXT;
-        } else if (type == Date.class) {
-            return INTEGER;
-        } else if (Serializable.class.isAssignableFrom(f.getType())) {
-            return BLOB;
-        } else {
-            return TEXT;
+    public static String getSQLDataType(int classType) {
+        switch (classType) {
+            case CLASS_TYPE_STRING:
+            case CLASS_TYPE_BOOLEAN:
+            case CLASS_TYPE_CHAR:
+                return TEXT;
+            case CLASS_TYPE_DOUBLE:
+            case CLASS_TYPE_FLOAT:
+                return REAL;
+            case CLASS_TYPE_LONG:
+            case CLASS_TYPE_INT:
+            case CLASS_TYPE_SHORT:
+            case CLASS_TYPE_BYTE:
+            case CLASS_TYPE_DATE:
+                return INTEGER;
+            case CLASS_TYPE_BYTE_ARRAY:
+            case CLASS_TYPE_SERIALIZABLE:
+            default:
+                return BLOB;
         }
     }
 
@@ -163,6 +182,8 @@ public class DataUtil implements Serializable {
         Field f;
         Property p;
         for (int i = 0, size = c.getColumnCount(); i < size; i++) {
+            //long start = System.nanoTime();
+
             String col = c.getColumnName(i);
             p = null;
             if (!Checker.isEmpty(table.pmap)) {
@@ -172,49 +193,99 @@ public class DataUtil implements Serializable {
                 p = table.key;
             }
             if (p == null) {
-                if (OrmLog.isPrint)
+                if (OrmLog.isPrint) {
                     OrmLog.w(TAG, "数据库字段[" + col + "]已在实体中被移除");
+                }
                 continue;
             }
             f = p.field;
             f.setAccessible(true);
-            Class<?> type = f.getType();
-            if (type == String.class) {
-                f.set(entity, c.getString(i));
-            } else if (type == boolean.class || type == Boolean.class) {
-                f.set(entity, Boolean.parseBoolean(c.getString(i)));
-            } else if (type == double.class || type == Double.class) {
-                f.set(entity, c.getDouble(i));
-            } else if (type == float.class || type == Float.class) {
-                f.set(entity, c.getFloat(i));
-            } else if (type == long.class || type == Long.class) {
-                f.set(entity, c.getLong(i));
-            } else if (type == int.class || type == Integer.class) {
-                f.set(entity, c.getInt(i));
-            } else if (type == short.class || type == Short.class) {
-                f.set(entity, c.getShort(i));
-            } else if (type == byte.class || type == Byte.class) {
-                if (c.getString(i) != null) {
-                    f.set(entity, Byte.parseByte(c.getString(i)));
-                }
-            } else if (type == byte[].class || type == Byte[].class) {
-                f.set(entity, c.getBlob(i));
-            } else if (type == char.class || type == Character.class) {
-                String value = c.getString(i);
-                if (!Checker.isEmpty(value)) {
-                    f.set(entity, value.charAt(0));
-                }
-            } else if (type == Date.class) {
-                f.set(entity, new Date(c.getLong(i)));
-                //            } else if (c.getType(i) == Cursor.FIELD_TYPE_BLOB) {
-            } else {
-                byte[] bytes = c.getBlob(i);
-                if (bytes != null) {
-                    //序列化的对象
-                    f.set(entity, byteToObject(bytes));
-                }
+            //Log.i(TAG, "parse pre after  " + ((System.nanoTime() - start) / 1000));
+            //start = System.nanoTime();
+            switch (p.classType) {
+                case CLASS_TYPE_STRING:
+                    f.set(entity, c.getString(i));
+                    break;
+                case CLASS_TYPE_BOOLEAN:
+                    f.set(entity, Boolean.parseBoolean(c.getString(i)));
+                    break;
+                case CLASS_TYPE_LONG:
+                    f.set(entity, c.getLong(i));
+                    break;
+                case CLASS_TYPE_INT:
+                    f.set(entity, c.getInt(i));
+                    break;
+                case CLASS_TYPE_DOUBLE:
+                    f.set(entity, c.getDouble(i));
+                    break;
+                case CLASS_TYPE_FLOAT:
+                    f.set(entity, c.getFloat(i));
+                    break;
+                case CLASS_TYPE_SHORT:
+                    f.set(entity, c.getShort(i));
+                    break;
+                case CLASS_TYPE_BYTE:
+                    if (c.getString(i) != null) {
+                        f.set(entity, Byte.parseByte(c.getString(i)));
+                    }
+                    break;
+                case CLASS_TYPE_BYTE_ARRAY:
+                    f.set(entity, c.getBlob(i));
+                    break;
+                case CLASS_TYPE_CHAR:
+                    String value = c.getString(i);
+                    if (!Checker.isEmpty(value)) {
+                        f.set(entity, value.charAt(0));
+                    }
+                    break;
+                case CLASS_TYPE_DATE:
+                    Long time = c.getLong(i);
+                    if (time != null) {
+                        f.set(entity, new Date(time));
+                    }
+                    break;
+                case CLASS_TYPE_SERIALIZABLE:
+                    byte[] bytes = c.getBlob(i);
+                    if (bytes != null) {
+                        //序列化的对象
+                        f.set(entity, byteToObject(bytes));
+                    }
+                    break;
+                default:
+                    break;
             }
+            //Log.i(TAG, "parse set after  " + ((System.nanoTime() - start) / 1000));
         }
+    }
+
+    public static int getFieldClassType(Field f) {
+        Class type = f.getType();
+        if (CharSequence.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_STRING;
+        } else if (boolean.class.isAssignableFrom(type) || Boolean.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_BOOLEAN;
+        } else if (double.class.isAssignableFrom(type) || Double.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_DOUBLE;
+        } else if (float.class.isAssignableFrom(type) || Float.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_FLOAT;
+        } else if (long.class.isAssignableFrom(type) || Long.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_LONG;
+        } else if (int.class.isAssignableFrom(type) || Integer.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_INT;
+        } else if (short.class.isAssignableFrom(type) || Short.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_SHORT;
+        } else if (byte.class.isAssignableFrom(type) || Byte.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_BYTE;
+        } else if (byte[].class.isAssignableFrom(type) || Byte[].class.isAssignableFrom(type)) {
+            return CLASS_TYPE_BYTE_ARRAY;
+        } else if (char.class.isAssignableFrom(type) || Character.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_CHAR;
+        } else if (Date.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_DATE;
+        } else if (Serializable.class.isAssignableFrom(type)) {
+            return CLASS_TYPE_SERIALIZABLE;
+        }
+        return CLASS_TYPE_UNKNOWN;
     }
 
     /**
@@ -245,6 +316,37 @@ public class DataUtil implements Serializable {
             if (oos != null)
                 oos.close();
         }
+    }
+
+
+    public static List<?> arrayToList(Object[] array) {
+        return Arrays.asList(array);
+    }
+
+    public static Object[] arrayToList(Collection<?> coll) {
+        return coll.toArray();
+    }
+
+    @TargetApi(Build.VERSION_CODES.GINGERBREAD)
+    public static <T> T[] concat(T[] first, T[] second) {
+        T[] result = Arrays.copyOf(first, first.length + second.length);
+        System.arraycopy(second, 0, result, first.length, second.length);
+        return result;
+    }
+
+    @TargetApi(Build.VERSION_CODES.GINGERBREAD)
+    public static <T> T[] concatAll(T[] first, T[]... rest) {
+        int totalLength = first.length;
+        for (T[] array : rest) {
+            totalLength += array.length;
+        }
+        T[] result = Arrays.copyOf(first, totalLength);
+        int offset = first.length;
+        for (T[] array : rest) {
+            System.arraycopy(array, 0, result, offset, array.length);
+            offset += array.length;
+        }
+        return result;
     }
 
 }

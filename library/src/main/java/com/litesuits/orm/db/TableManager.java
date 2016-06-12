@@ -1,3 +1,18 @@
+/*
+ * Copyright (C) 2013 litesuits.com
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package com.litesuits.orm.db;
 
 
@@ -105,7 +120,7 @@ public final class TableManager {
      * 检测[映射表]是否建立，没有则建一张新表。
      */
     public synchronized void checkOrCreateMappingTable(SQLiteDatabase db, String tableName,
-            String column1, String column2) {
+                                                       String column1, String column2) {
         // 关键点1：获取[实体表]
         EntityTable table = getMappingTable(tableName, column1, column2);
         // 关键点2: 判断[数据库表]是否存在，是否需要新加列。
@@ -402,19 +417,14 @@ public final class TableManager {
                 if (FieldUtil.isInvalid(f)) {
                     continue;
                 }
-                Property p = new Property();
-                p.field = f;
+
                 // 获取列名,每个属性都有，没有注解默认取属性名
-                //if(OrmLog.isPrint)OrmLog.i(TAG, "Column : " + Column.class+ "  field: "+ f);
                 Column col = f.getAnnotation(Column.class);
-                if (col != null) {
-                    p.column = col.value();
-                } else {
-                    p.column = f.getName();
-                }
+                String column = col != null ? col.value() : f.getName();
+                Property p = new Property(column, f);
+
 
                 // 主键判断
-                //if(OrmLog.isPrint)OrmLog.i(TAG, "Primarykey : " + Primarykey.class + "  field: "+ f + " asst:" + AssignType.AUTO_INCREMENT);
                 PrimaryKey key = f.getAnnotation(PrimaryKey.class);
                 if (key != null) {
                     // 主键不加入属性Map
@@ -423,7 +433,6 @@ public final class TableManager {
                     checkPrimaryKey(table.key);
                 } else {
                     //ORM handle
-                    //if(OrmLog.isPrint)OrmLog.i(TAG, "Mapping : " + Mapping.class+ " field: "+ f);
                     Mapping mapping = f.getAnnotation(Mapping.class);
                     if (mapping != null) {
                         table.addMapping(new MapProperty(p, mapping.value()));
